@@ -1,6 +1,14 @@
 using UnityEngine;
 using System.Collections.Generic; // Needed for Lists and Dictionaries
 
+public enum TileType
+{
+    Water,
+    Grass,
+    Mountain,
+    Hill
+}
+
 public class HexasphereGenerator : MonoBehaviour
 {
     // --- Constants ---
@@ -41,12 +49,13 @@ public class HexasphereGenerator : MonoBehaviour
     [Range(0, 6)]
     public int subdivisionLevel = 2;
     public float radius = 5f;
-    public int mapSeed = 0; // Added seed placeholder
+    public int mapSeed = 0;
 
     // --- Data Structures ---
     private List<Vector3> vertices;
     private List<HexTile> tiles;
     private Dictionary<long, int> midpointCache;
+    private System.Random pseudoRandomGen;
 
     // Public property to access tiles if needed by other scripts
     public List<HexTile> Tiles => tiles;
@@ -60,8 +69,9 @@ public class HexasphereGenerator : MonoBehaviour
         public Vector3 CenterPosition;
         public List<int> NeighborIds;
         public bool IsPentagon;
-        public float height = 0f; // Added height placeholder
+        public int HeightLevel = 0;
         public List<Vector3> CornerVertices;
+        public TileType Type;
 
         public HexTile(int id, Vector3 center, bool isPent)
         {
@@ -70,6 +80,7 @@ public class HexasphereGenerator : MonoBehaviour
             IsPentagon = isPent;
             NeighborIds = new List<int>();
             CornerVertices = new List<Vector3>();
+            Type = TileType.Grass;
         }
     }
 
@@ -152,6 +163,7 @@ public class HexasphereGenerator : MonoBehaviour
     // Main generation function (now called from Awake)
     public void Generate()
     {
+        pseudoRandomGen = new System.Random(mapSeed);
         // Ensure base data is initialized (should be, as Awake runs first)
         if (icosahedronVertices == null)
         {
@@ -222,14 +234,50 @@ public class HexasphereGenerator : MonoBehaviour
     private void CreateTiles()
     {
         tiles = new List<HexTile>(vertices.Count);
-        for (int i = 0; i < vertices.Count; i++)
+        pseudoRandomGen ??= new System.Random(mapSeed);
+        
+        for (var i = 0; i < vertices.Count; i++)
         {
-            bool isPentagon = i < 12;
-            var newTile = new HexTile(i, vertices[i], isPentagon);
+            var isPentagon = i < 12;
+            var newTile = new HexTile(i, vertices[i], isPentagon)
+            {
+                HeightLevel = pseudoRandomGen.NextDouble(-3, 4)
+            };
+            var randomTypeValue = (float)pseudoRandomGen.NextDouble();
+            
+            switch (newTile.HeightLevel)
+            {
+                // Negative levels are always Water
+                case < 0:
+                    newTile.Type = TileType.Water;
+                    break;
+                // Levels 2, 3 are always Mountain
+                case 1:
+                    newTile.Type = TileType.Grass;
+                    break;
+                case 2:
+                    newTile.Type = TileType.Hill;
+                    break;
+                case 3:
+                    newTile.Type = TileType.Mountain;
+                    break;
+                // Levels -1, 0, 1 are candidates for Grass/Water/Mountain based on random chance
+                default:
+                    break;
+            }
+            // float waterProbability = 0.55f;
+            // float grassProbability = 0.35f;
+            // float mountainProbability = 0.1f;
+            // Adjust probabilities for mid-levels if desired
+            float waterProbMid = 0.1f; // 10%
+            float grassProbMid = 0.7f; // 70%
+            // Mountain prob = 20%
 
-            // Example placeholder height: taller near poles (normalized Y)
-            // Ensure vertices are normalized before accessing y for consistent 0-1 range
-            newTile.height = Mathf.Abs(vertices[i].normalized.y);
+            if (randomTypeValue < waterProbMid) newTile.Type = TileType.Water;
+            else if (randomTypeValue < waterProbMid + grassProbMid) newTile.Type = TileType.Grass;
+            else newTile.Type = TileType.Mountain;
+            
+
 
             tiles.Add(newTile);
         }
