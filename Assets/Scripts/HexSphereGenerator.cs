@@ -1,5 +1,9 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
-using System.Collections.Generic; // Needed for Lists and Dictionaries
+using Random = System.Random;
+
+// Needed for Lists and Dictionaries
 
 public enum TileType
 {
@@ -9,86 +13,63 @@ public enum TileType
     Hill
 }
 
-public class HexasphereGenerator : MonoBehaviour
+public class HexSphereGenerator : MonoBehaviour
 {
+    // --- Public Fields (Editable in Inspector) ---
+    [Header("Generation Settings")] [Range(0, 6)]
+    public int subdivisionLevel = 2;
+
+    public float radius = 5f;
+
+    public int mapSeed;
+
     // --- Constants ---
     // Golden Ratio (phi) for icosahedron vertex calculation
-    private readonly float GoldenRatio = (1f + Mathf.Sqrt(5f)) / 2f;
-
-    // Base Icosahedron vertices (normalized to unit sphere)
-    // *** DECLARED HERE, INITIALIZED IN Awake() ***
-    private Vector3[] icosahedronVertices;
+    private readonly float _goldenRatio = (1f + Mathf.Sqrt(5f)) / 2f;
 
     // Base Icosahedron triangles (indices referencing icosahedronVertices array)
     // Defines the 20 initial triangular faces connecting the vertices
-    private readonly int[] icosahedronTriangles = {
-        0,  1,  2,
-        0,  3,  1,
-        0,  2,  4,
-        3,  0,  5,
-        0,  4,  5,
-        1,  3,  6,
-        1,  7,  2,
-        7,  1,  6,
-        4,  2,  8,
-        7,  8,  2,
-        9,  3,  5,
-        6,  3,  9,
-        5,  4, 10,
-        4,  8, 10,
-        9,  5, 10,
-        7,  6, 11,
-        7, 11,  8,
-        11,  6,  9,
+    private readonly int[] _icosahedronTriangles =
+    {
+        0, 1, 2,
+        0, 3, 1,
+        0, 2, 4,
+        3, 0, 5,
+        0, 4, 5,
+        1, 3, 6,
+        1, 7, 2,
+        7, 1, 6,
+        4, 2, 8,
+        7, 8, 2,
+        9, 3, 5,
+        6, 3, 9,
+        5, 4, 10,
+        4, 8, 10,
+        9, 5, 10,
+        7, 6, 11,
+        7, 11, 8,
+        11, 6, 9,
         8, 11, 10,
-        10, 11,  9
+        10, 11, 9
     };
 
-    // --- Public Fields (Editable in Inspector) ---
-    [Header("Generation Settings")]
-    [Range(0, 6)]
-    public int subdivisionLevel = 2;
-    public float radius = 5f;
-    public int mapSeed = 0;
+    // Base Icosahedron vertices (normalized to unit sphere)
+    // *** DECLARED HERE, INITIALIZED IN Awake() ***
+    private Vector3[] _icosahedronVertices;
+    private Dictionary<long, int> _midpointCache;
+    private Random _pseudoRandomGen;
 
     // --- Data Structures ---
-    private List<Vector3> vertices;
-    private List<HexTile> tiles;
-    private Dictionary<long, int> midpointCache;
-    private System.Random pseudoRandomGen;
+    private List<Vector3> _vertices;
 
     // Public property to access tiles if needed by other scripts
-    public List<HexTile> Tiles => tiles;
-
-
-    // --- Tile Data Class ---
-    [System.Serializable]
-    public class HexTile
-    {
-        public int Id;
-        public Vector3 CenterPosition;
-        public List<int> NeighborIds;
-        public bool IsPentagon;
-        public int HeightLevel = 0;
-        public List<Vector3> CornerVertices;
-        public TileType Type;
-
-        public HexTile(int id, Vector3 center, bool isPent)
-        {
-            Id = id;
-            CenterPosition = center;
-            IsPentagon = isPent;
-            NeighborIds = new List<int>();
-            CornerVertices = new List<Vector3>();
-            Type = TileType.Grass;
-        }
-    }
+    public List<HexTile> Tiles { get; private set; }
 
 
     // --- Unity Methods ---
 
     // Called when the script instance is being loaded
-    void Awake()
+    private void Awake()
     {
         // Initialize data that depends on instance fields first
         InitializeIcosahedronData();
@@ -100,28 +81,28 @@ public class HexasphereGenerator : MonoBehaviour
     // Start is called before the first frame update (Generate is now called in Awake)
     // void Start() { }
 
-    void OnDrawGizmos()
+    private void OnDrawGizmos()
     {
-        if (tiles == null) return;
+        if (Tiles == null) return;
 
-        for (int i = 0; i < tiles.Count; i++)
+        for (var i = 0; i < Tiles.Count; i++)
         {
-            HexTile tile = tiles[i];
-            if (tile == null || tile.CornerVertices == null || tile.CornerVertices.Count < 3) continue;
+            var tile = Tiles[i];
+            if (tile == null || tile.cornerVertices == null || tile.cornerVertices.Count < 3) continue;
 
             // --- Draw Center (Optional) ---
-            float colorIntensity = Mathf.Clamp01(tile.height);
-            Color baseColor = tile.IsPentagon ? Color.red : Color.blue;
+            var colorIntensity = Mathf.Clamp01(tile.heightLevel);
+            var baseColor = tile.isPentagon ? Color.red : Color.blue;
             Gizmos.color = Color.Lerp(baseColor * 0.5f, baseColor, colorIntensity);
             // Gizmos.DrawSphere(tile.CenterPosition, 0.05f * radius * 0.1f); // Can hide this now
 
             // --- Draw Tile Outline ---
             Gizmos.color = Color.yellow; // Use a distinct color for outlines
-            for (int j = 0; j < tile.CornerVertices.Count; j++)
+            for (var j = 0; j < tile.cornerVertices.Count; j++)
             {
-                Vector3 currentCorner = tile.CornerVertices[j];
+                var currentCorner = tile.cornerVertices[j];
                 // Get the next corner, wrapping around using the modulo operator (%)
-                Vector3 nextCorner = tile.CornerVertices[(j + 1) % tile.CornerVertices.Count];
+                var nextCorner = tile.cornerVertices[(j + 1) % tile.cornerVertices.Count];
                 Gizmos.DrawLine(currentCorner, nextCorner);
             }
 
@@ -132,276 +113,256 @@ public class HexasphereGenerator : MonoBehaviour
         }
     }
 
-    // --- Initialization ---
-
-    // *** NEW METHOD TO INITIALIZE ICOSAHEDRON DATA ***
     private void InitializeIcosahedronData()
     {
-        icosahedronVertices = new Vector3[] {
-            new(0.8506508f,           0.5257311f,         0f),            // 0
-            new(0.000000101405476f,   0.8506507f,        -0.525731f),     // 1
-            new(0.000000101405476f,   0.8506506f,         0.525731f),     // 2
-            new(0.5257309f,          -0.00000006267203f, -0.85065067f),   // 3
-            new(0.52573115f,         -0.00000006267203f,  0.85065067f),   // 4
-            new(0.8506508f,          -0.5257311f,         0f),            // 5
-            new(-0.52573115f,         0.00000006267203f, -0.85065067f),   // 6
-            new(-0.8506508f,          0.5257311f,         0f),            // 7
-            new(-0.5257309f,          0.00000006267203f,  0.85065067f),   // 8
-            new(-0.000000101405476f, -0.8506506f,        -0.525731f),     // 9
-            new(-0.000000101405476f, -0.8506507f,         0.525731f),     // 10
-            new(-0.8506508f,         -0.5257311f,         0f)             // 11
+        _icosahedronVertices = new Vector3[]
+        {
+            new(0.8506508f, 0.5257311f, 0f), // 0
+            new(0.000000101405476f, 0.8506507f, -0.525731f), // 1
+            new(0.000000101405476f, 0.8506506f, 0.525731f), // 2
+            new(0.5257309f, -0.00000006267203f, -0.85065067f), // 3
+            new(0.52573115f, -0.00000006267203f, 0.85065067f), // 4
+            new(0.8506508f, -0.5257311f, 0f), // 5
+            new(-0.52573115f, 0.00000006267203f, -0.85065067f), // 6
+            new(-0.8506508f, 0.5257311f, 0f), // 7
+            new(-0.5257309f, 0.00000006267203f, 0.85065067f), // 8
+            new(-0.000000101405476f, -0.8506506f, -0.525731f), // 9
+            new(-0.000000101405476f, -0.8506507f, 0.525731f), // 10
+            new(-0.8506508f, -0.5257311f, 0f) // 11
         };
         // Ensure icosahedronTriangles has exactly 60 indices (20 triangles * 3 vertices)
-        if(icosahedronTriangles.Length != 60) {
-            Debug.LogError($"Icosahedron triangle definition is incorrect! Expected 60 indices, found {icosahedronTriangles.Length}. Check for duplicates or missing faces.");
+        if (_icosahedronTriangles.Length != 60)
+        {
+            Debug.LogError($"Icosahedron triangle definition is incorrect! Expected 60 indices, " +
+                           $"found {_icosahedronTriangles.Length}. Check for duplicates or missing faces.");
+            throw new Exception("Icosahedron triangle definition is incorrect!");
         }
     }
 
-
-    // --- Generation Logic ---
-
-    // Main generation function (now called from Awake)
     public void Generate()
     {
-        pseudoRandomGen = new System.Random(mapSeed);
-        // Ensure base data is initialized (should be, as Awake runs first)
-        if (icosahedronVertices == null)
+        _pseudoRandomGen = new Random(mapSeed);
+        if (_icosahedronVertices == null)
         {
-           Debug.LogError("Icosahedron data not initialized before Generate() call!");
-           InitializeIcosahedronData(); // Attempt recovery
+            Debug.LogError("Icosahedron data not initialized before Generate() call!");
+            InitializeIcosahedronData();
         }
 
-        vertices = new List<Vector3>(icosahedronVertices);
-        midpointCache = new Dictionary<long, int>();
-        List<int> currentTriangles = new List<int>(icosahedronTriangles);
+        _vertices = new List<Vector3>(_icosahedronVertices);
+        _midpointCache = new Dictionary<long, int>();
+        var currentTriangles = new List<int>(_icosahedronTriangles);
 
-        for (int i = 0; i < subdivisionLevel; i++)
+        for (var i = 0; i < subdivisionLevel; i++)
         {
-            List<int> newTriangles = new List<int>();
-            for (int j = 0; j < currentTriangles.Count; j += 3)
+            var newTriangles = new List<int>();
+            for (var j = 0; j < currentTriangles.Count; j += 3)
             {
-                int v1 = currentTriangles[j];
-                int v2 = currentTriangles[j + 1];
-                int v3 = currentTriangles[j + 2];
+                var v1 = currentTriangles[j];
+                var v2 = currentTriangles[j + 1];
+                var v3 = currentTriangles[j + 2];
 
-                int m12 = GetMidpointIndex(v1, v2);
-                int m23 = GetMidpointIndex(v2, v3);
-                int m31 = GetMidpointIndex(v3, v1);
+                var m12 = GetMidpointIndex(v1, v2);
+                var m23 = GetMidpointIndex(v2, v3);
+                var m31 = GetMidpointIndex(v3, v1);
 
-                newTriangles.AddRange(new int[] { v1, m12, m31 });
-                newTriangles.AddRange(new int[] { v2, m23, m12 });
-                newTriangles.AddRange(new int[] { v3, m31, m23 });
-                newTriangles.AddRange(new int[] { m12, m23, m31 });
+                newTriangles.AddRange(new[] { v1, m12, m31 });
+                newTriangles.AddRange(new[] { v2, m23, m12 });
+                newTriangles.AddRange(new[] { v3, m31, m23 });
+                newTriangles.AddRange(new[] { m12, m23, m31 });
             }
+
             currentTriangles = newTriangles;
         }
 
-        List<int> finalTriangles = currentTriangles;
+        var finalTriangles = currentTriangles;
 
-        for (int i = 0; i < vertices.Count; i++)
-        {
-            vertices[i] = vertices[i].normalized * radius;
-        }
+        for (var i = 0; i < _vertices.Count; i++) _vertices[i] = _vertices[i].normalized * radius;
 
         CreateTiles();
         FindNeighbors(finalTriangles);
         CalculateTileCorners(finalTriangles);
 
-        Debug.Log($"Generated Hexasphere: {tiles.Count} tiles. (Subdivision level: {subdivisionLevel}, Seed: {mapSeed})");
+        Debug.Log(
+            $"Generated Hexasphere: {Tiles.Count} tiles. (Subdivision level: {subdivisionLevel}, Seed: {mapSeed})");
     }
 
     private int GetMidpointIndex(int v1, int v2)
     {
         long smallerIndex = Mathf.Min(v1, v2);
         long greaterIndex = Mathf.Max(v1, v2);
-        long key = (smallerIndex << 32) + greaterIndex;
+        var key = (smallerIndex << 32) + greaterIndex;
 
-        if (midpointCache.TryGetValue(key, out int ret))
-        {
-            return ret;
-        }
+        if (_midpointCache.TryGetValue(key, out var ret)) return ret;
 
-        Vector3 p1 = vertices[v1];
-        Vector3 p2 = vertices[v2];
-        Vector3 midpoint = (p1 + p2) * 0.5f;
-        int newIndex = vertices.Count;
-        vertices.Add(midpoint);
-        midpointCache.Add(key, newIndex);
+        var p1 = _vertices[v1];
+        var p2 = _vertices[v2];
+        var midpoint = (p1 + p2) * 0.5f;
+        var newIndex = _vertices.Count;
+        _vertices.Add(midpoint);
+        _midpointCache.Add(key, newIndex);
 
         return newIndex;
     }
 
     private void CreateTiles()
     {
-        tiles = new List<HexTile>(vertices.Count);
-        pseudoRandomGen ??= new System.Random(mapSeed);
-        
-        for (var i = 0; i < vertices.Count; i++)
+        Tiles = new List<HexTile>(_vertices.Count);
+        _pseudoRandomGen ??= new Random(mapSeed);
+
+        for (var i = 0; i < _vertices.Count; i++)
         {
             var isPentagon = i < 12;
-            var newTile = new HexTile(i, vertices[i], isPentagon)
+            var newTile = new HexTile(i, _vertices[i], isPentagon)
             {
-                HeightLevel = pseudoRandomGen.NextDouble(-3, 4)
+                heightLevel = _pseudoRandomGen.Next(-3, 4)
             };
-            var randomTypeValue = (float)pseudoRandomGen.NextDouble();
-            
-            switch (newTile.HeightLevel)
+            var randomTypeValue = (float)_pseudoRandomGen.NextDouble();
+
+            newTile.type = newTile.heightLevel switch
             {
-                // Negative levels are always Water
-                case < 0:
-                    newTile.Type = TileType.Water;
-                    break;
-                // Levels 2, 3 are always Mountain
-                case 1:
-                    newTile.Type = TileType.Grass;
-                    break;
-                case 2:
-                    newTile.Type = TileType.Hill;
-                    break;
-                case 3:
-                    newTile.Type = TileType.Mountain;
-                    break;
-                // Levels -1, 0, 1 are candidates for Grass/Water/Mountain based on random chance
-                default:
-                    break;
-            }
-            // float waterProbability = 0.55f;
-            // float grassProbability = 0.35f;
-            // float mountainProbability = 0.1f;
-            // Adjust probabilities for mid-levels if desired
-            float waterProbMid = 0.1f; // 10%
-            float grassProbMid = 0.7f; // 70%
-            // Mountain prob = 20%
+                < 0 => TileType.Water, // Negative levels are always Water
+                1 => TileType.Grass,
+                2 => TileType.Hill,
+                3 => TileType.Mountain,
+                _ => TileType.Grass
+            };
 
-            if (randomTypeValue < waterProbMid) newTile.Type = TileType.Water;
-            else if (randomTypeValue < waterProbMid + grassProbMid) newTile.Type = TileType.Grass;
-            else newTile.Type = TileType.Mountain;
-            
-
-
-            tiles.Add(newTile);
+            Tiles.Add(newTile);
         }
     }
 
-     private void FindNeighbors(List<int> finalTriangles)
+    private void FindNeighbors(List<int> finalTriangles)
     {
-        Dictionary<int, HashSet<int>> neighborSets = new Dictionary<int, HashSet<int>>();
-        for(int i = 0; i < tiles.Count; i++)
+        var neighborSets = new Dictionary<int, HashSet<int>>();
+        for (var i = 0; i < Tiles.Count; i++) neighborSets.Add(i, new HashSet<int>());
+
+        for (var i = 0; i < finalTriangles.Count; i += 3)
         {
-            neighborSets.Add(i, new HashSet<int>());
-        }
+            var v1 = finalTriangles[i];
+            var v2 = finalTriangles[i + 1];
+            var v3 = finalTriangles[i + 2];
 
-        for (int i = 0; i < finalTriangles.Count; i += 3)
-        {
-            int v1 = finalTriangles[i];
-            int v2 = finalTriangles[i + 1];
-            int v3 = finalTriangles[i + 2];
-
-             // Safety check for valid indices before accessing neighborSets
-            if (v1 < 0 || v1 >= tiles.Count || v2 < 0 || v2 >= tiles.Count || v3 < 0 || v3 >= tiles.Count) {
-                 Debug.LogWarning($"Invalid vertex index found in triangle data at index {i}. Skipping neighbor assignment for this triangle.");
-                 continue;
-            }
-
-            neighborSets[v1].Add(v2); neighborSets[v2].Add(v1);
-            neighborSets[v1].Add(v3); neighborSets[v3].Add(v1);
-            neighborSets[v2].Add(v3); neighborSets[v3].Add(v2);
-        }
-
-        foreach(var kvp in neighborSets)
-        {
-            if(kvp.Key >= 0 && kvp.Key < tiles.Count && tiles[kvp.Key] != null)
+            // Safety check for valid indices before accessing neighborSets
+            if (v1 < 0 || v1 >= Tiles.Count || v2 < 0 || v2 >= Tiles.Count || v3 < 0 || v3 >= Tiles.Count)
             {
-                tiles[kvp.Key].NeighborIds.AddRange(kvp.Value);
+                Debug.LogWarning(
+                    $"Invalid vertex index found in triangle data at index {i}. Skipping neighbor assignment for this triangle.");
+                continue;
             }
+
+            neighborSets[v1].Add(v2);
+            neighborSets[v2].Add(v1);
+            neighborSets[v1].Add(v3);
+            neighborSets[v3].Add(v1);
+            neighborSets[v2].Add(v3);
+            neighborSets[v3].Add(v2);
         }
+
+        foreach (var kvp in neighborSets)
+            if (kvp.Key >= 0 && kvp.Key < Tiles.Count && Tiles[kvp.Key] != null)
+                Tiles[kvp.Key].neighborIds.AddRange(kvp.Value);
     }
-     
-     // Calculates the corner vertices for each tile based on shared triangle centroids
+
+    // Calculates the corner vertices for each tile based on shared triangle centroids
     private void CalculateTileCorners(List<int> finalTriangles)
     {
         // Temporary dictionary to gather corners for each tile ID
-        Dictionary<int, List<Vector3>> cornersByTileId = new Dictionary<int, List<Vector3>>();
-        for (int i = 0; i < tiles.Count; i++)
-        {
-            cornersByTileId.Add(i, new List<Vector3>());
-        }
+        var cornersByTileId = new Dictionary<int, List<Vector3>>();
+        for (var i = 0; i < Tiles.Count; i++) cornersByTileId.Add(i, new List<Vector3>());
 
         // Each triangle in the final mesh defines a corner vertex
-        for (int i = 0; i < finalTriangles.Count; i += 3)
+        for (var i = 0; i < finalTriangles.Count; i += 3)
         {
-            int v1Idx = finalTriangles[i];
-            int v2Idx = finalTriangles[i + 1];
-            int v3Idx = finalTriangles[i + 2];
+            var v1Idx = finalTriangles[i];
+            var v2Idx = finalTriangles[i + 1];
+            var v3Idx = finalTriangles[i + 2];
 
             // Get the positions of the tile centers forming this triangle
-            Vector3 p1 = vertices[v1Idx];
-            Vector3 p2 = vertices[v2Idx];
-            Vector3 p3 = vertices[v3Idx];
+            var p1 = _vertices[v1Idx];
+            var p2 = _vertices[v2Idx];
+            var p3 = _vertices[v3Idx];
 
             // Calculate the centroid of the triangle
-            Vector3 centroid = (p1 + p2 + p3) / 3.0f;
+            var centroid = (p1 + p2 + p3) / 3.0f;
 
             // Project the centroid onto the sphere surface to get the corner position
-            Vector3 corner = centroid.normalized * radius;
+            var corner = centroid.normalized * radius;
 
             // This corner belongs to the tiles centered at v1, v2, and v3
             // Add it to the list for each of these tiles in our temporary dictionary
-            if (v1Idx < tiles.Count) cornersByTileId[v1Idx].Add(corner);
-            if (v2Idx < tiles.Count) cornersByTileId[v2Idx].Add(corner);
-            if (v3Idx < tiles.Count) cornersByTileId[v3Idx].Add(corner);
+            if (v1Idx < Tiles.Count) cornersByTileId[v1Idx].Add(corner);
+            if (v2Idx < Tiles.Count) cornersByTileId[v2Idx].Add(corner);
+            if (v3Idx < Tiles.Count) cornersByTileId[v3Idx].Add(corner);
         }
 
         // Now, assign the collected corners to the actual HexTile objects
         // And crucially, order them clockwise/counter-clockwise
         foreach (var kvp in cornersByTileId)
         {
-            int tileId = kvp.Key;
-            List<Vector3> collectedCorners = kvp.Value;
+            var tileId = kvp.Key;
+            var collectedCorners = kvp.Value;
 
-            if (tileId >= 0 && tileId < tiles.Count && tiles[tileId] != null)
-            {
+            if (tileId >= 0 && tileId < Tiles.Count && Tiles[tileId] != null)
                 // Order the corners before assigning them
-                tiles[tileId].CornerVertices = OrderCornersClockwise(tiles[tileId].CenterPosition, collectedCorners);
-            }
+                Tiles[tileId].cornerVertices = OrderCornersClockwise(Tiles[tileId].centerPosition, collectedCorners);
         }
     }
 
     // Helper function to order corner vertices around a center point
     private List<Vector3> OrderCornersClockwise(Vector3 center, List<Vector3> corners)
     {
-        if (corners == null || corners.Count < 3)
-        {
-            return corners; // Not enough corners to order
-        }
+        if (corners == null || corners.Count < 3) return corners; // Not enough corners to order
 
         // Calculate the normal vector at the center of the tile (approximates the 'up' direction)
-        Vector3 normal = center.normalized;
+        var normal = center.normalized;
 
         // Use List.Sort with a custom comparer
-        corners.Sort((a, b) => {
+        corners.Sort((a, b) =>
+        {
             // Project vectors onto the plane perpendicular to the normal
-            Vector3 dirA = (a - center).normalized; // Direction from center to corner A
-            Vector3 dirB = (b - center).normalized; // Direction from center to corner B
+            var dirA = (a - center).normalized; // Direction from center to corner A
+            var dirB = (b - center).normalized; // Direction from center to corner B
 
             // Choose an arbitrary reference direction on the tangent plane (e.g., cross product with 'up')
             // Ensure the reference vector is not parallel to the normal
-            Vector3 referenceDirection = Vector3.Cross(normal, Vector3.up);
+            var referenceDirection = Vector3.Cross(normal, Vector3.up);
             if (referenceDirection.sqrMagnitude < 0.001f)
-            {
                 referenceDirection = Vector3.Cross(normal, Vector3.right); // Fallback if normal is vertical
-            }
             referenceDirection.Normalize();
 
 
             // Calculate signed angles relative to the reference direction around the normal axis
-            float angleA = Vector3.SignedAngle(referenceDirection, dirA, normal);
-            float angleB = Vector3.SignedAngle(referenceDirection, dirB, normal);
+            var angleA = Vector3.SignedAngle(referenceDirection, dirA, normal);
+            var angleB = Vector3.SignedAngle(referenceDirection, dirB, normal);
 
             // Compare angles (handle wrap around 360 if necessary, though SignedAngle usually handles this from -180 to 180)
             return angleA.CompareTo(angleB);
         });
 
         return corners;
+    }
+
+
+    // --- Tile Data Class ---
+    [Serializable]
+    public class HexTile
+    {
+        public int id;
+        public Vector3 centerPosition;
+        public List<int> neighborIds;
+        public bool isPentagon;
+        public int heightLevel;
+        public List<Vector3> cornerVertices;
+        public TileType type;
+
+        public HexTile(int id, Vector3 center, bool isPent)
+        {
+            this.id = id;
+            centerPosition = center;
+            isPentagon = isPent;
+            neighborIds = new List<int>();
+            cornerVertices = new List<Vector3>();
+            type = TileType.Grass;
+        }
     }
 }
