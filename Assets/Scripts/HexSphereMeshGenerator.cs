@@ -161,16 +161,17 @@ public class HexSphereMeshGenerator : MonoBehaviour
         };
 
         var cornerCount = tile.cornerVertices.Count;
+        if (cornerCount < 3) return mesh;
         var vertexCount = cornerCount + 1; // Corners + Center
-        var heightOffset = tile.centerPosition.normalized * tile.heightLevel * visualHeightScale;
+        // var heightOffset = tile.centerPosition.normalized * tile.heightLevel * visualHeightScale;
+        var centerHeightOffset = tile.centerPosition.normalized * tile.heightLevel * visualHeightScale;
         
         // --- Vertices ---
-        var vertices = new List<Vector3>(vertexCount) { Vector3.zero + heightOffset };
+        var vertices = new List<Vector3>(vertexCount) { Vector3.zero + centerHeightOffset };
         // Add corner vertices relative to the center
         for (var i = 0; i < cornerCount; i++)
         {
-            var relativeCornerPos = tile.cornerVertices[i] - tile.centerPosition;
-            vertices.Add(relativeCornerPos + heightOffset);
+            vertices.Add(tile.cornerVertices[i] - tile.centerPosition);
         }
         mesh.SetVertices(vertices);
 
