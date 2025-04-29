@@ -1,14 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Random = System.Random;
 
 public enum TileType
 {
-    Water,
+    Trench,
+    DeepWater,
+    Coast,
     Grass,
+    Hill,
     Mountain,
-    Hill
+    MegaMountain
 }
 
 public class HexSphereGenerator : MonoBehaviour
@@ -18,6 +22,7 @@ public class HexSphereGenerator : MonoBehaviour
     public int subdivisionLevel = 2;
     public float radius = 5f;
     public int mapSeed;
+    public float visualHeightScale = 0.05f;
 
     // Base Icosahedron triangles (indices referencing icosahedronVertices array)
     // Defines the 20 initial triangular faces connecting the vertices
@@ -50,8 +55,9 @@ public class HexSphereGenerator : MonoBehaviour
     private Dictionary<long, int> _midpointCache;
     private Random _pseudoRandomGen;
     private List<Vector3> _vertices;
-    private List<Vector3> rawCornerPositions;
-    private Dictionary<CornerKey, Vector3> resolvedCornerPositions;
+    private List<Vector3> _rawCornerPositions;
+    private Dictionary<CornerKey, Vector3> _resolvedCornerPositions;
+
     public List<HexTile> Tiles { get; private set; }
     
     private void Awake()
@@ -103,9 +109,8 @@ public class HexSphereGenerator : MonoBehaviour
     {
         if (Tiles == null) return;
 
-        for (var i = 0; i < Tiles.Count; i++)
+        foreach (var tile in Tiles)
         {
-            var tile = Tiles[i];
             if (tile == null || tile.cornerVertices == null || tile.cornerVertices.Count < 3) continue;
 
             // --- Draw Center (Optional) ---
@@ -123,11 +128,6 @@ public class HexSphereGenerator : MonoBehaviour
                 var nextCorner = tile.cornerVertices[(j + 1) % tile.cornerVertices.Count];
                 Gizmos.DrawLine(currentCorner, nextCorner);
             }
-
-            /* // --- Optional: Draw Neighbor Connections (Keep commented for performance) ---
-            Gizmos.color = Color.white * 0.5f;
-            // ... (neighbor drawing code remains the same) ...
-            */
         }
     }
 
@@ -240,10 +240,13 @@ public class HexSphereGenerator : MonoBehaviour
 
             newTile.type = newTile.heightLevel switch
             {
-                < 0 => TileType.Water, // Negative levels are always Water
-                1 => TileType.Grass,
-                2 => TileType.Hill,
-                3 => TileType.Mountain,
+                -3 => TileType.Trench,
+                -2 => TileType.DeepWater,
+                -1 => TileType.Coast,
+                0 => TileType.Grass,
+                1 => TileType.Hill,
+                2 => TileType.Mountain,
+                3 => TileType.MegaMountain,
                 _ => TileType.Grass
             };
 
@@ -278,9 +281,8 @@ public class HexSphereGenerator : MonoBehaviour
             neighborSets[v3].Add(v2);
         }
 
-        foreach (var kvp in neighborSets)
-            if (kvp.Key >= 0 && kvp.Key < Tiles.Count && Tiles[kvp.Key] != null)
-                Tiles[kvp.Key].neighborIds.AddRange(kvp.Value);
+        foreach (var kvp in neighborSets.Where(kvp => kvp.Key >= 0 && kvp.Key < Tiles.Count && Tiles[kvp.Key] != null))
+            Tiles[kvp.Key].neighborIds.AddRange(kvp.Value);
     }
 
     // Calculates the corner vertices for each tile based on shared triangle centroids
@@ -335,8 +337,7 @@ public class HexSphereGenerator : MonoBehaviour
 
         // Calculate the normal vector at the center of the tile (approximates the 'up' direction)
         var normal = center.normalized;
-
-        // Use List.Sort with a custom comparer
+        
         corners.Sort((a, b) =>
         {
             // Project vectors onto the plane perpendicular to the normal
@@ -364,14 +365,14 @@ public class HexSphereGenerator : MonoBehaviour
     
     private void CalculateRawCorners(List<int> finalTriangles)
     {
-        rawCornerPositions = new List<Vector3>(finalTriangles.Count / 3); // Estimated capacity
-        resolvedCornerPositions = new Dictionary<CornerKey, Vector3>();
+        _rawCornerPositions = new List<Vector3>(finalTriangles.Count / 3); // Estimated capacity
+        _resolvedCornerPositions = new Dictionary<CornerKey, Vector3>();
 
-        for (int i = 0; i < finalTriangles.Count; i += 3)
+        for (var i = 0; i < finalTriangles.Count; i += 3)
         {
-            int v1Idx = finalTriangles[i];
-            int v2Idx = finalTriangles[i + 1];
-            int v3Idx = finalTriangles[i + 2];
+            var v1Idx = finalTriangles[i];
+            var v2Idx = finalTriangles[i + 1];
+            var v3Idx = finalTriangles[i + 2];
 
             // Safety check for valid indices
             if (v1Idx < 0 || v1Idx >= _vertices.Count ||
@@ -382,43 +383,43 @@ public class HexSphereGenerator : MonoBehaviour
                 continue;
             }
 
-            Vector3 p1 = _vertices[v1Idx];
-            Vector3 p2 = _vertices[v2Idx];
-            Vector3 p3 = _vertices[v3Idx];
+            var p1 = _vertices[v1Idx];
+            var p2 = _vertices[v2Idx];
+            var p3 = _vertices[v3Idx];
 
             // Calculate the centroid
-            Vector3 centroid = (p1 + p2 + p3) / 3.0f;
+            var centroid = (p1 + p2 + p3) / 3.0f;
 
             // Project the centroid onto the sphere surface
-            Vector3 cornerPos = centroid.normalized * radius;
-            rawCornerPositions.Add(cornerPos); // Store the raw position
+            var cornerPos = centroid.normalized * radius;
+            _rawCornerPositions.Add(cornerPos); // Store the raw position
 
             // Create the unique key for this corner based on the tiles sharing it
-            CornerKey key = new CornerKey(v1Idx, v2Idx, v3Idx);
+            var key = new CornerKey(v1Idx, v2Idx, v3Idx);
 
             // Add to dictionary (or update if somehow duplicate triangle existed)
             // Store the RAW position initially. We resolve height later.
-            resolvedCornerPositions[key] = cornerPos;
+            _resolvedCornerPositions[key] = cornerPos;
         }
-        Debug.Log($"Calculated {rawCornerPositions.Count} raw corner positions.");
+        Debug.Log($"Calculated {_rawCornerPositions.Count} raw corner positions.");
     }
 
     private void ResolveSharedCornerHeights()
     {
-        if (resolvedCornerPositions == null || Tiles == null) return;
+        if (_resolvedCornerPositions == null || Tiles == null) return;
 
-        Dictionary<CornerKey, Vector3> finalPositions = new Dictionary<CornerKey, Vector3>(resolvedCornerPositions.Count);
+        var finalPositions = new Dictionary<CornerKey, Vector3>(_resolvedCornerPositions.Count);
 
         // Iterate through the unique corners we identified
-        foreach (var kvp in resolvedCornerPositions)
+        foreach (var kvp in _resolvedCornerPositions)
         {
-            CornerKey key = kvp.Key;
-            Vector3 rawPos = kvp.Value; // The position on the base sphere
+            var key = kvp.Key;
+            var rawPos = kvp.Value; // The position on the base sphere
 
             // Get the IDs of the 3 tiles sharing this corner from the key
-            int t1Idx = key.v1;
-            int t2Idx = key.v2;
-            int t3Idx = key.v3;
+            var t1Idx = key.v1;
+            var t2Idx = key.v2;
+            var t3Idx = key.v3;
 
             // Safety check tile indices
              if (t1Idx < 0 || t1Idx >= Tiles.Count || Tiles[t1Idx] == null ||
@@ -432,7 +433,7 @@ public class HexSphereGenerator : MonoBehaviour
 
 
             // Find the minimum height level among the 3 tiles
-            int minHeightLevel = Tiles[t1Idx].heightLevel;
+            var minHeightLevel = Tiles[t1Idx].heightLevel;
             minHeightLevel = Mathf.Min(minHeightLevel, Tiles[t2Idx].heightLevel);
             minHeightLevel = Mathf.Min(minHeightLevel, Tiles[t3Idx].heightLevel);
 
@@ -440,36 +441,34 @@ public class HexSphereGenerator : MonoBehaviour
             // Use the SAME visualHeightScale as the mesh generator will use later!
             // Consider getting this scale from the generator or making it static/const.
              // For now, hardcode or reference it (replace 0.05f if different)
-            float heightScale = GetComponent<HexSphereMeshGenerator>()?.visualHeightScale ?? 0.05f;
-            Vector3 heightOffset = rawPos.normalized * minHeightLevel * heightScale;
+            // var heightScale = GetComponent<HexSphereMeshGenerator>()?.visualHeightScale ?? 0.05f;
+            var heightScale = visualHeightScale;
+            var heightOffset = rawPos.normalized * minHeightLevel * heightScale;
 
             // Calculate final position
-            Vector3 finalPos = rawPos + heightOffset;
+            var finalPos = rawPos + heightOffset;
             finalPositions[key] = finalPos;
         }
 
         // Replace the dictionary with the newly calculated final positions
-        resolvedCornerPositions = finalPositions;
-        Debug.Log($"Resolved heights for {resolvedCornerPositions.Count} unique corners.");
+        _resolvedCornerPositions = finalPositions;
+        Debug.Log($"Resolved heights for {_resolvedCornerPositions.Count} unique corners.");
     }
     
     private void AssignCornersToTiles()
     {
-        if (resolvedCornerPositions == null || Tiles == null) return;
+        if (_resolvedCornerPositions == null || Tiles == null) return;
 
         // Temporary dict to gather corners for each tile before ordering
-        Dictionary<int, List<Vector3>> cornersToAssign = new Dictionary<int, List<Vector3>>();
-        for (int i = 0; i < Tiles.Count; i++)
+        var cornersToAssign = new Dictionary<int, List<Vector3>>();
+        for (var i = 0; i < Tiles.Count; i++)
         {
             cornersToAssign.Add(i, new List<Vector3>());
         }
 
         // Iterate through the unique resolved corners
-        foreach (var kvp in resolvedCornerPositions)
+        foreach (var (key, finalPos) in _resolvedCornerPositions)
         {
-            CornerKey key = kvp.Key;
-            Vector3 finalPos = kvp.Value; // The final height-resolved position
-
             // Add this final position to the lists of the 3 tiles sharing this corner
             if (key.v1 < Tiles.Count) cornersToAssign[key.v1].Add(finalPos);
             if (key.v2 < Tiles.Count) cornersToAssign[key.v2].Add(finalPos);
@@ -477,17 +476,12 @@ public class HexSphereGenerator : MonoBehaviour
         }
 
         // Now order and assign the corners to the actual HexTile objects
-        foreach(var kvp in cornersToAssign)
+        foreach(var (tileId, collectedCorners) in cornersToAssign)
         {
-            int tileId = kvp.Key;
-            List<Vector3> collectedCorners = kvp.Value;
-
-            if (tileId >= 0 && tileId < Tiles.Count && Tiles[tileId] != null)
-            {
-                // Clear previous corners if any, then add the ordered list
-                Tiles[tileId].cornerVertices.Clear();
-                Tiles[tileId].cornerVertices.AddRange(OrderCornersClockwise(Tiles[tileId].centerPosition, collectedCorners));
-            }
+            if (tileId < 0 || tileId >= Tiles.Count || Tiles[tileId] == null) continue;
+            // Clear previous corners if any, then add the ordered list
+            Tiles[tileId].cornerVertices.Clear();
+            Tiles[tileId].cornerVertices.AddRange(OrderCornersClockwise(Tiles[tileId].centerPosition, collectedCorners));
         }
         Debug.Log("Assigned and ordered corners for all tiles.");
     }

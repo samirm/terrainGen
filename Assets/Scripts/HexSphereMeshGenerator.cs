@@ -192,18 +192,19 @@ public class HexSphereMeshGenerator : MonoBehaviour
         var normals = new List<Vector3>(vertexCount);
         var normal = tile.centerPosition.normalized;
         for (var i = 0; i < vertexCount; i++) normals.Add(normal);
-        mesh.SetNormals(normals);
-
+        // mesh.SetNormals(normals);
+        mesh.RecalculateNormals();
+        
         // --- UVs (Basic Planar Mapping - adjust as needed) ---
         var uvs = new List<Vector2>(vertexCount) { new Vector2(0.5f, 0.5f) };
+        var right = Vector3.Cross(normal, Vector3.up).normalized;
+        if (right.sqrMagnitude < 0.001f) right = Vector3.Cross(normal, Vector3.forward).normalized; // Fallback
+        var up = Vector3.Cross(right, normal).normalized;
+        
         for (var i = 0; i < cornerCount; i++)
         {
             // Project corner onto a plane relative to center - very basic
-            var relativePos = vertices[i + 1]; // Already relative
-            var right = Vector3.Cross(normal, Vector3.up).normalized;
-            if (right.sqrMagnitude < 0.001f) right = Vector3.Cross(normal, Vector3.forward).normalized; // Fallback
-            var up = Vector3.Cross(right, normal).normalized;
-
+            var relativePos = vertices[i + 1] - centerHeightOffset;
             var u = Vector3.Dot(relativePos, right) * 0.5f + 0.5f; // Scale and center
             var v = Vector3.Dot(relativePos, up) * 0.5f + 0.5f; // Scale and center
             uvs.Add(new Vector2(u, v));
