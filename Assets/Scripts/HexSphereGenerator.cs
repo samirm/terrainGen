@@ -111,7 +111,7 @@ public class HexSphereGenerator : MonoBehaviour
 
         foreach (var tile in Tiles)
         {
-            if (tile == null || tile.cornerVertices == null || tile.cornerVertices.Count < 3) continue;
+            if (tile?.cornerVertices == null || tile.cornerVertices.Count < 3) continue;
 
             // --- Draw Center (Optional) ---
             var colorIntensity = Mathf.Clamp01(tile.heightLevel);
